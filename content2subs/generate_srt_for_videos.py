@@ -1,5 +1,18 @@
 #!/usr/bin/env python3
 """
+WSL Ubuntu 22.04:
+wget https://apt.llvm.org/llvm-snapshot.gpg.key
+sudo apt-key add llvm-snapshot.gpg.key
+sudo bash -c 'echo "deb http://apt.llvm.org/focal/ llvm-toolchain-focal-10 main" > /etc/apt/sources.list.d/llvm10.list'
+sudo apt update
+sudo apt install llvm-10 clang-10
+export LLVM_CONFIG=/usr/bin/llvm-config-10
+
+pyenv install 3.10
+pyenv local 3.10.13
+poetry env use 3.10
+
+# poetry install
 Script that scans a directory for supported media files (video/audio),
 uses OpenAI Whisper to generate .srt subtitles, and optionally burns them
 onto a new .mp4 for video files.
@@ -17,25 +30,16 @@ import tempfile
 from pathlib import Path
 from typing import Dict, List
 
+from constants import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, BORDER_STYLE, OUTLINE_COLOUR_HEX, PCM_CODEC, SUPPORTED_EXTENSIONS
 import ffmpeg
 from utils import is_video_file, strip_extension, write_srt
 import whisper
 from tqdm import tqdm
 
-SUPPORTED_EXTENSIONS = [".mkv", ".mp4", ".mp3", ".m4u", ".wav"]
-VIDEO_EXTENSIONS = {".mkv", ".mp4"}  # used when burning subtitles
-PCM_CODEC = "pcm_s16le"  # 16-bit PCM
-AUDIO_CHANNELS = 1  # mono
-AUDIO_SAMPLE_RATE = 16_000  # 16 kHz
-
-# Subtitle styling
-OUTLINE_COLOUR_HEX = "&H40000000"
-BORDER_STYLE = 3
-
 # Logging configuration
-LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+LOG_FORMAT = "%(asctime)s : %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def extract_audio(input_files: List[Path]) -> Dict[Path, Path]:
@@ -47,7 +51,7 @@ def extract_audio(input_files: List[Path]) -> Dict[Path, Path]:
     for media_path in input_files:
         base_stem = strip_extension(media_path)
         wav_path = Path(tempfile.gettempdir()) / f"{base_stem}.wav"
-        LOGGER.info("Extracting audio from '%s' to '%s'", media_path, wav_path)
+        logger.info("Extracting audio from '%s' to '%s'", media_path, wav_path)
         (
             ffmpeg.input(str(media_path))
             .output(
@@ -70,7 +74,7 @@ def burn_subtitles_into_video(
     saving a new .mp4 in `output_dir` named <stem>_subtitled.mp4.
     """
     output_file = output_dir / f"{strip_extension(video_path)}_subtitled.mp4"
-    LOGGER.info("Burning subtitles for '%s' into '%s'", video_path, output_file)
+    logger.info("Burning subtitles for '%s' into '%s'", video_path, output_file)
 
     video_input = ffmpeg.input(str(video_path))
     audio_input = video_input.audio
@@ -104,13 +108,13 @@ def generate_subtitles(
       4. Optionally burn the .srt into a new .mp4 for video files if `srt_only` is False.
     """
     if not media_paths:
-        LOGGER.info("No files to process.")
+        logger.info("No files to process.")
         return
 
     # 1) Load the Whisper model
-    LOGGER.info("Loading Whisper model '%s'...", model_name)
+    logger.info("Loading Whisper model '%s'...", model_name)
     if model_name.endswith(".en"):
-        LOGGER.warning(
+        logger.warning(
             "%s is an English-only model; forcing English detection.", model_name
         )
     model = whisper.load_model(model_name)
@@ -124,7 +128,7 @@ def generate_subtitles(
         stem = strip_extension(media_path)
         srt_file = output_dir / f"{stem}.srt"
 
-        LOGGER.info("Transcribing '%s' -> '%s'", media_path, srt_file)
+        logger.info("Transcribing '%s' -> '%s'", media_path, srt_file)
         result = model.transcribe(str(wav_path))
         segments = result["segments"]
         write_srt(segments, srt_file)
@@ -137,11 +141,11 @@ def generate_subtitles(
                 output_file = burn_subtitles_into_video(
                     media_path, srt_path, output_dir
                 )
-                LOGGER.info("Saved subtitled video to '%s'", output_file)
+                logger.info("Saved subtitled video to '%s'", output_file)
             else:
-                LOGGER.info("Skipping burn-in for '%s' (audio-only).", media_path)
+                logger.info("Skipping burn-in for '%s' (audio-only).", media_path)
     else:
-        LOGGER.info("SRT files generated only (no burn-in).")
+        logger.info("SRT files generated only (no burn-in).")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -186,7 +190,7 @@ def main():
 
     # Collect all files with SUPPORTED_EXTENSIONS in root_path
     if not root_path.is_dir():
-        LOGGER.error(
+        logger.error(
             "Provided root '%s' is not a directory or does not exist.", root_path
         )
         return
@@ -196,7 +200,7 @@ def main():
         all_files.extend(root_path.glob(f"*{ext}"))
 
     if not all_files:
-        LOGGER.info(
+        logger.info(
             "No files found in '%s' with extensions %s.",
             root_path,
             SUPPORTED_EXTENSIONS,
@@ -204,15 +208,14 @@ def main():
         return
 
     all_files = sorted(all_files)
-    print(all_files)
-    return
+
     # Filter out those that already have a matching .srt
-    LOGGER.info("Checking for existing .srt files...")
+    logger.info("Checking for existing .srt files...")
     to_subtitle = []
     for media_file in tqdm(all_files, desc="Scanning files"):
         srt_candidate = root_path / f"{strip_extension(media_file)}.srt"
         if srt_candidate.exists():
-            LOGGER.info(
+            logger.info(
                 "Skipping '%s': subtitle '%s' already exists.",
                 media_file.name,
                 srt_candidate.name,
@@ -221,11 +224,11 @@ def main():
             to_subtitle.append(media_file)
 
     if not to_subtitle:
-        LOGGER.info("No new files require subtitles.")
+        logger.info("No new files require subtitles.")
         return
 
     # Generate subtitles + optionally burn
-    LOGGER.info("Generating subtitles for %d file(s)...", len(to_subtitle))
+    logger.info("Generating subtitles for %d file(s)...", len(to_subtitle))
     generate_subtitles(
         media_paths=to_subtitle,
         model_name=model_name,
@@ -233,7 +236,7 @@ def main():
         output_dir=root_path,
     )
 
-    LOGGER.info("All done!")
+    logger.info("All done!")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,9 @@
+from pathlib import Path
+import logging
+
+from content2subs.constants import VIDEO_EXTENSIONS
+LOGGER = logging.getLogger(__name__)
+
 def format_timestamp(seconds: float, always_include_hours: bool = False) -> str:
     """
     Convert `seconds` to an SRT timestamp string, e.g. "00:00:03,210".
