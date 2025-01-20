@@ -2,6 +2,8 @@
 
 `content2subs` is a Python script that scans a directory for supported media files (video/audio), uses OpenAI Whisper to generate .srt subtitles, and optionally burns them onto a new .mp4 for video files.
 
+A great use is to generate subtitles for meetings or lectures that were recorded without subtitles. This allows for easy searching and indexing the content.
+
 ## Requirements
 
 - Python 3.10
